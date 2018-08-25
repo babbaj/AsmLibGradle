@@ -6,7 +6,7 @@ class AsmLibExtension {
 
     private Project project;
 
-    AsmLibExtension(Project project) {
+    public AsmLibExtension(Project project) {
         this.project = project;
         this.project.afterEvaluate(p -> System.out.println("epic"));
     }
