@@ -8,6 +8,7 @@ import java.io.File;
 import java.util.Objects;
 
 // the task responsible for parsing the .srg files and generating a json file for remapping
+// TODO: dont want this to be a task
 public class GenMappingsTask extends DefaultTask {
 
     private final Task genSrgs;
@@ -21,10 +22,11 @@ public class GenMappingsTask extends DefaultTask {
     public void runTask() {
         // TODO: properly check if these properties/files exist
         final File mapToNotch = (File)genSrgs.property("mcpToNotch");
-        final File mcpToSrg =   (File)genSrgs.property("mcpToSrg");
+        final File mcpToSrg   = (File)genSrgs.property("mcpToSrg");
 
         System.out.println("GenMappingsTask: " + mapToNotch);
         System.out.println("GenMappingsTask: " + mcpToSrg);
+        }
 
-    }
+
 }

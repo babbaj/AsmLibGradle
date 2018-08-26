@@ -22,11 +22,12 @@ public class AsmLibGradlePlugin implements Plugin<Project> {
 
         final Task genMappings = project.getTasks().create("genMappings", GenMappingsTask.class);
 
-        project.getTasks().getByName("build").dependsOn(genMappings);
+        project.getTasks().getByName("build").dependsOn(genMappings); // TODO: delet
 
 
         project.getExtensions().create("asmlib", AsmLibExtension.class, project);
     }
+
 
     private @Nullable ForgeGradleVersion detectForgeGradleVersion(Project project) {
         if (project.getTasks().findByName("genSrgs") != null) {
