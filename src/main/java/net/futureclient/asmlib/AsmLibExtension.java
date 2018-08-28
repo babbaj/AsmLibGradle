@@ -1,13 +1,13 @@
 package net.futureclient.asmlib;
 
+import net.futureclient.asmlib.forgegradle.ForgeGradleVersion;
+import net.futureclient.asmlib.parser.srg.SrgParser;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
-import org.gradle.api.internal.DynamicObjectUtil;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.compile.JavaCompile;
-import org.gradle.internal.metaobject.DynamicObject;
 
-import java.io.IOException;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -16,22 +16,21 @@ import java.util.*;
 class AsmLibExtension {
 
     private final Project project;
+    private final ForgeGradleVersion forgeGradleVersion;
 
-    Set<SourceSet> asmLibSourceSets = new HashSet<>();
-    Set<String> asmLibMappingConfigs = new HashSet<>();
+    private Set<SourceSet> asmLibSourceSets = new HashSet<>();
+    private Set<String> asmLibMappingConfigs = new HashSet<>();
 
-    public AsmLibExtension(Project project) {
-        //TODO: init
+    public AsmLibExtension(Project project, ForgeGradleVersion forgeGradleVersion) {
         this.project = project;
+        this.forgeGradleVersion = forgeGradleVersion;
     }
 
     public void add(SourceSet sourceSet, String... asmLibMappingConfigs) {
         this.asmLibSourceSets.add(sourceSet);
         this.asmLibMappingConfigs.addAll(Arrays.asList(asmLibMappingConfigs));
 
-        project.afterEvaluate(p -> {
-            configure(sourceSet);
-        });
+        project.afterEvaluate(p -> this.configure(sourceSet));
     }
 
     private void configure(SourceSet sourceSet) {
@@ -40,14 +39,51 @@ class AsmLibExtension {
             throw new IllegalStateException("Can not add non-java SourceSet (" + sourceSet + ")");
         final JavaCompile compileTask = (JavaCompile) t;
 
-        Path tempDir = getResourcePath(sourceSet);
+        Path tempDir = this.getResourcePath(sourceSet);
         Path testFile = tempDir.resolve("test");
 
-
         compileTask.doFirst(task -> {
-            System.out.println("Preparing asmlib stuff :DD");
-        });
+            File mcpToNotch;
+            File mcpToSrg;
 
+            switch (this.forgeGradleVersion) {
+                case FORGEGRADLE_2_X:
+                    final Task genSrgs = project.getTasks().getByName("genSrgs");
+                    mcpToNotch = (File) genSrgs.property("mcpToNotch");
+                    mcpToSrg = (File) genSrgs.property("mcpToSrg");
+                    break;
+                default:
+                    throw new UnsupportedOperationException("Unsupported ForgeGradle Version!");
+            }
+
+            Objects.requireNonNull(mcpToNotch);
+            Objects.requireNonNull(mcpToSrg);
+
+            System.out.println("GenMappingsTask: " + mcpToNotch);
+            System.out.println("GenMappingsTask: " + mcpToSrg);
+
+            SrgParser mcpToNotchParser;
+            try {
+                InputStream stream = new FileInputStream(mcpToNotch);
+                mcpToNotchParser = new SrgParser(stream);
+                stream.close();
+            } catch (IOException e) {
+                throw new Error(e);
+            }
+
+            System.out.println(mcpToNotchParser.getMethodMcpToObfMap().size());
+
+            SrgParser mcpToSrgParser;
+            try {
+                InputStream stream = new FileInputStream(mcpToSrg);
+                mcpToSrgParser = new SrgParser(stream);
+                stream.close();
+            } catch (IOException e) {
+                throw new Error(e);
+            }
+
+            System.out.println(mcpToSrgParser.getMethodMcpToObfMap().size());
+        });
 
         compileTask.doLast(task -> {
             System.out.println("gonna put file here");
@@ -57,16 +93,9 @@ class AsmLibExtension {
                 ex.printStackTrace();
             }
         });
-
     }
 
     private Path getResourcePath(SourceSet sourceSet) {
         return sourceSet.getOutput().getResourcesDir().toPath();
     }
-
-    // convert object to (((groovy))) object
-    private DynamicObject asDynamic(Object object) {
-        return DynamicObjectUtil.asDynamicObject(object);
-    }
-
 }

@@ -1,5 +1,7 @@
 package net.futureclient.asmlib.forgegradle;
 
+import org.gradle.api.Project;
+
 public enum ForgeGradleVersion {
     FORGEGRADLE_1_X("1.x", false),
     FORGEGRADLE_2_X("2.x", true),
@@ -19,5 +21,16 @@ public enum ForgeGradleVersion {
 
     public boolean isSupported() {
         return this.supported;
+    }
+
+    public static ForgeGradleVersion detectForgeGradleVersion(Project project) {
+        if (project.getTasks().findByName("genSrgs") != null) {
+            if (project.getTasks().findByName("reobf") != null)
+                return ForgeGradleVersion.FORGEGRADLE_1_X;
+            else if (project.getExtensions().findByName("reobf") != null)
+                return ForgeGradleVersion.FORGEGRADLE_2_X;
+        }
+
+        return null;
     }
 }
