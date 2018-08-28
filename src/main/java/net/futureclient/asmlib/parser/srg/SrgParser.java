@@ -12,50 +12,47 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Stream;
 
-public class SrgParser {
+public interface SrgParser {
 
-    private final Map<ClassMember, ClassMember> classMcpToObfMap = new HashMap<>();
-    private final Map<FieldMember, FieldMember> fieldMcpToObfMap = new HashMap<>();
-    private final Map<MethodMember, MethodMember> methodMcpToObfMap = new HashMap<>();
+    // Parses an mcp-notch.srg or mcp-srg.srg file
+    static SrgMap parse(Stream<String> lines) {
+        final Map<ClassMember, ClassMember> classes = new HashMap<>();
+        final Map<FieldMember, FieldMember> fields = new HashMap<>();
+        final Map<MethodMember, MethodMember> methods = new HashMap<>();
 
-    public SrgParser(InputStream inputStream) {
-        Stream<String> lines = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8)).lines();
 
         lines.forEach(line -> {
             String[] split = line.split(" +");
 
             switch (split[0]) {
                 case "CL:": {
+                    // CL: net/minecraft/client/Minecraft bib
                     String mcpName = split[1], obfName = split[2];
 
-                    this.classMcpToObfMap.put(new ClassMember(mcpName), new ClassMember(obfName));
+                    classes.put(new ClassMember(mcpName), new ClassMember(obfName));
                     break;
                 }
                 case "FD:": {
+                    // FD: net/minecraft/client/Minecraft/player bib/h
                     String mcpName = split[1], obfName = split[2];
 
-                    this.fieldMcpToObfMap.put(new FieldMember(mcpName), new FieldMember(obfName));
+                    fields.put(new FieldMember(mcpName), new FieldMember(obfName));
                     break;
                 }
                 case "MD:": {
+                    // MD: net/minecraft/client/Minecraft/getMinecraft ()Lnet/minecraft/client/Minecraft; bib/z ()Lbib;
                     String mcpName = split[1], mcpSignature = split[2], obfName = split[3], obfSignature = split[4];
 
-                    this.methodMcpToObfMap.put(new MethodMember(mcpName, mcpSignature), new MethodMember(obfName, obfSignature));
+                    methods.put(new MethodMember(mcpName, mcpSignature), new MethodMember(obfName, obfSignature));
                     break;
                 }
             }
         });
+
+        return new SrgMap(classes, fields, methods);
     }
 
-    public Map<ClassMember, ClassMember> getClassMcpToObfMap() {
-        return this.classMcpToObfMap;
-    }
 
-    public Map<FieldMember, FieldMember> getFieldMcpToObfMap() {
-        return this.fieldMcpToObfMap;
-    }
 
-    public Map<MethodMember, MethodMember> getMethodMcpToObfMap() {
-        return this.methodMcpToObfMap;
-    }
+
 }

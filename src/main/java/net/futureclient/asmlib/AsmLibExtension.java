@@ -1,6 +1,7 @@
 package net.futureclient.asmlib;
 
 import net.futureclient.asmlib.forgegradle.ForgeGradleVersion;
+import net.futureclient.asmlib.parser.srg.SrgMap;
 import net.futureclient.asmlib.parser.srg.SrgParser;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
@@ -8,6 +9,7 @@ import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.compile.JavaCompile;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -62,27 +64,14 @@ class AsmLibExtension {
             System.out.println("GenMappingsTask: " + mcpToNotch);
             System.out.println("GenMappingsTask: " + mcpToSrg);
 
-            SrgParser mcpToNotchParser;
-            try {
-                InputStream stream = new FileInputStream(mcpToNotch);
-                mcpToNotchParser = new SrgParser(stream);
-                stream.close();
-            } catch (IOException e) {
-                throw new Error(e);
-            }
+            final SrgMap mcpToNotchMap = parseSrgFile(mcpToNotch);
 
-            System.out.println(mcpToNotchParser.getMethodMcpToObfMap().size());
+            System.out.println(mcpToNotchMap.getMethodMap().size());
 
-            SrgParser mcpToSrgParser;
-            try {
-                InputStream stream = new FileInputStream(mcpToSrg);
-                mcpToSrgParser = new SrgParser(stream);
-                stream.close();
-            } catch (IOException e) {
-                throw new Error(e);
-            }
+            final SrgMap mcpToSrgMap = parseSrgFile(mcpToSrg);
 
-            System.out.println(mcpToSrgParser.getMethodMcpToObfMap().size());
+
+            System.out.println(mcpToSrgMap.getMethodMap().size());
         });
 
         compileTask.doLast(task -> {
@@ -94,6 +83,19 @@ class AsmLibExtension {
             }
         });
     }
+
+    private SrgMap parseSrgFile(File file) {
+        try (BufferedReader reader = newReader(file)) {
+            return SrgParser.parse(reader.lines());
+        } catch (IOException e) {
+            throw new Error(e);
+        }
+    }
+
+    private BufferedReader newReader(File file) throws IOException {
+        return new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8));
+    }
+
 
     private Path getResourcePath(SourceSet sourceSet) {
         return sourceSet.getOutput().getResourcesDir().toPath();
