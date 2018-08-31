@@ -1,24 +1,21 @@
 package net.futureclient.asmlib.parser.srg;
 
-import net.futureclient.asmlib.parser.srg.member.ClassMember;
+import javafx.util.Pair;
 import net.futureclient.asmlib.parser.srg.member.FieldMember;
 import net.futureclient.asmlib.parser.srg.member.MethodMember;
 
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
+
+import java.util.*;
 import java.util.stream.Stream;
 
-public interface SrgParser {
+public abstract class SrgParser {
+    private SrgParser() {}
 
     // Parses an mcp-notch.srg or mcp-srg.srg file
-    static SrgMap parse(Stream<String> lines) {
-        final Map<ClassMember, ClassMember> classes = new HashMap<>();
-        final Map<FieldMember, FieldMember> fields = new HashMap<>();
-        final Map<MethodMember, MethodMember> methods = new HashMap<>();
+    public static SrgMap parse(Stream<String> lines) {
+        final Map<String, String> classes = new LinkedHashMap<>();
+        final Map<FieldMember, String> fields = new LinkedHashMap<>();
+        final Map<MethodMember, String> methods = new LinkedHashMap<>(); // TODO: use set
 
 
         lines.forEach(line -> {
@@ -29,30 +26,38 @@ public interface SrgParser {
                     // CL: net/minecraft/client/Minecraft bib
                     String mcpName = split[1], obfName = split[2];
 
-                    classes.put(new ClassMember(mcpName), new ClassMember(obfName));
+                    classes.put(mcpName, obfName);
                     break;
                 }
                 case "FD:": {
                     // FD: net/minecraft/client/Minecraft/player bib/h
-                    String mcpName = split[1], obfName = split[2];
-
-                    fields.put(new FieldMember(mcpName), new FieldMember(obfName));
+                    String fullMCpName = split[1], fullObfName = split[2];
+                    final Pair<String, String> mcpName = splitClassAndName(fullMCpName);
+                    final Pair<String, String> obfName = splitClassAndName(fullObfName);
+                    fields.put(new FieldMember(mcpName.getKey(), mcpName.getValue()), obfName.getValue());
                     break;
                 }
                 case "MD:": {
                     // MD: net/minecraft/client/Minecraft/getMinecraft ()Lnet/minecraft/client/Minecraft; bib/z ()Lbib;
-                    String mcpName = split[1], mcpSignature = split[2], obfName = split[3], obfSignature = split[4];
+                    String fullMcpName = split[1], mcpSignature = split[2], fullObfName = split[3], obfSignature = split[4];
+                    final String obfName = splitClassAndName(fullObfName).getValue();
+                    final Pair<String, String> mcpName = splitClassAndName(fullMcpName);
 
-                    methods.put(new MethodMember(mcpName, mcpSignature), new MethodMember(obfName, obfSignature));
+
+                    methods.put(new MethodMember(mcpName.getValue(), mcpSignature, mcpName.getKey()), obfName);
                     break;
                 }
             }
         });
-
         return new SrgMap(classes, fields, methods);
     }
 
-
+    private static Pair<String, String> splitClassAndName(String str) {
+        final int lastSlash = str.lastIndexOf('/');
+        final String clazz = str.substring(0, lastSlash);
+        final String name = str.substring(lastSlash + 1);
+        return new Pair<>(clazz, name);
+    }
 
 
 }

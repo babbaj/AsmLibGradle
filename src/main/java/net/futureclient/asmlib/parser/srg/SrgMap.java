@@ -1,6 +1,5 @@
 package net.futureclient.asmlib.parser.srg;
 
-import net.futureclient.asmlib.parser.srg.member.ClassMember;
 import net.futureclient.asmlib.parser.srg.member.FieldMember;
 import net.futureclient.asmlib.parser.srg.member.MethodMember;
 
@@ -9,27 +8,27 @@ import java.util.Map;
 
 public final class SrgMap {
 
-    private final Map<ClassMember, ClassMember> classMap;
-    private final Map<FieldMember, FieldMember> fieldMap;
-    private final Map<MethodMember, MethodMember> methodMap;
+    private final Map<String, String> classMap;
+    private final Map<FieldMember, String> fieldMap;
+    private final Map<MethodMember, String> methodMap;
 
 
-    SrgMap(Map<ClassMember, ClassMember> classes, Map<FieldMember, FieldMember> fields, Map<MethodMember, MethodMember> methods) {
+    SrgMap(Map<String, String> classes, Map<FieldMember, String> fields, Map<MethodMember, String> methods) {
         this.classMap =  Collections.unmodifiableMap(classes);
         this.fieldMap =  Collections.unmodifiableMap(fields);
         this.methodMap = Collections.unmodifiableMap(methods);
     }
 
 
-    public Map<ClassMember, ClassMember> getClassMap() {
+    public Map<String, String> getClassMap() {
         return this.classMap;
     }
 
-    public Map<FieldMember, FieldMember> getFieldMap() {
+    public Map<FieldMember, String> getFieldMap() {
         return this.fieldMap;
     }
 
-    public Map<MethodMember, MethodMember> getMethodMap() {
+    public Map<MethodMember, String> getMethods() {
         return this.methodMap;
     }
 }
