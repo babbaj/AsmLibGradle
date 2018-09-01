@@ -4,7 +4,6 @@ import javafx.util.Pair;
 import net.futureclient.asmlib.parser.srg.member.FieldMember;
 import net.futureclient.asmlib.parser.srg.member.MethodMember;
 
-
 import java.util.*;
 import java.util.stream.Stream;
 
@@ -14,8 +13,8 @@ public abstract class SrgParser {
     // Parses an mcp-notch.srg or mcp-srg.srg file
     public static SrgMap parse(Stream<String> lines) {
         final Map<String, String> classes = new LinkedHashMap<>();
-        final Map<FieldMember, String> fields = new LinkedHashMap<>();
-        final Map<MethodMember, String> methods = new LinkedHashMap<>(); // TODO: use set
+        final Map<String, Set<FieldMember>> fields = new LinkedHashMap<>();
+        final Map<String, Set<MethodMember>> methods = new LinkedHashMap<>();
 
 
         lines.forEach(line -> {
@@ -34,7 +33,8 @@ public abstract class SrgParser {
                     String fullMCpName = split[1], fullObfName = split[2];
                     final Pair<String, String> mcpName = splitClassAndName(fullMCpName);
                     final Pair<String, String> obfName = splitClassAndName(fullObfName);
-                    fields.put(new FieldMember(mcpName.getKey(), mcpName.getValue()), obfName.getValue());
+
+                    merge(fields, mcpName.getKey(), new FieldMember(mcpName.getValue(), obfName.getValue()));
                     break;
                 }
                 case "MD:": {
@@ -43,13 +43,21 @@ public abstract class SrgParser {
                     final String obfName = splitClassAndName(fullObfName).getValue();
                     final Pair<String, String> mcpName = splitClassAndName(fullMcpName);
 
-
-                    methods.put(new MethodMember(mcpName.getValue(), mcpSignature, mcpName.getKey()), obfName);
+                    merge(methods, mcpName.getKey(), new MethodMember(mcpName.getValue(), mcpSignature, obfName));
                     break;
                 }
             }
         });
         return new SrgMap(classes, fields, methods);
+    }
+
+    private static <K, V> void merge(Map<K, Set<V>> map, K key, V newValue) {
+        map.merge(key,
+                new LinkedHashSet<>(Collections.singleton(newValue)),
+                (s1, s2) -> {
+                    s1.addAll(s2);
+                    return s1;
+                });
     }
 
     private static Pair<String, String> splitClassAndName(String str) {

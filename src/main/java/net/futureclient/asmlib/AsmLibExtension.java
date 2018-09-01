@@ -4,6 +4,8 @@ import com.google.gson.*;
 import net.futureclient.asmlib.forgegradle.ForgeGradleVersion;
 import net.futureclient.asmlib.parser.srg.SrgMap;
 import net.futureclient.asmlib.parser.srg.SrgParser;
+import net.futureclient.asmlib.parser.srg.member.FieldMember;
+import net.futureclient.asmlib.parser.srg.member.MethodMember;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.tasks.SourceSet;
@@ -15,8 +17,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Collector;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-class AsmLibExtension {
+public class AsmLibExtension {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
@@ -92,7 +99,6 @@ class AsmLibExtension {
             final Map<String, String> classNames = mcpToNotch.getClassMap();
             System.out.println(classNames.size() + " classes");
 
-            // TODO: This REALLY needs to be optimized
             classNames.forEach((mcpClass, obfClass) -> {
                 final JsonObject classJson = new JsonObject();
                 mappings.add(mcpClass, classJson);
@@ -102,45 +108,15 @@ class AsmLibExtension {
                     final JsonObject fields = new JsonObject();
                     classJson.add("fields", fields);
 
-
-                    mcpToNotch.getFieldMap().entrySet().stream()
-                            .filter(entry -> entry.getKey().getParentClass().equals(mcpClass))
-                            .forEach(entry -> {
-                        JsonObject fieldValues = new JsonObject();
-                        fieldValues.addProperty("notch", entry.getValue());
-                        fields.add(entry.getKey().getName(), fieldValues);
-                    });
-                    mcpToSrg.getFieldMap().entrySet().stream()
-                            .filter(entry -> entry.getKey().getParentClass().equals(mcpClass))
-                            .forEach(entry -> {
-                                JsonObject fieldValues = Optional.ofNullable(fields.get(entry.getKey().getName()))
-                                        .map(JsonElement::getAsJsonObject)
-                                        .orElseThrow(() -> new IllegalStateException("Missing obf field: " + entry.getKey().getName())); // TODO: check for missing srg fields
-                                fieldValues.addProperty("srg", entry.getValue());
-                                fields.add(entry.getKey().getName(), fieldValues);
-                            });
-
+                    addJsonValues(fields, mcpToNotch, mcpToSrg, mcpClass, SrgMap::getFieldMap,
+                            FieldMember::getName, FieldMember::getObfName);
                 }
                 {
                     final JsonObject methods = new JsonObject();
                     classJson.add("methods", methods);
 
-                    mcpToNotch.getMethods().entrySet().stream()
-                            .filter(entry -> entry.getKey().getParentClass().equals(mcpClass))
-                            .forEach(entry -> {
-                                JsonObject methodValues = new JsonObject();
-                                methodValues.addProperty("notch", entry.getValue());
-                                methods.add(entry.getKey().getMcpName() + entry.getKey().getSignature(), methodValues);
-                            });
-                    mcpToSrg.getMethods().entrySet().stream()
-                            .filter(entry -> entry.getKey().getParentClass().equals(mcpClass))
-                            .forEach(entry -> {
-                                JsonObject methodValues = Optional.ofNullable(methods.get(entry.getKey().getMcpName() + entry.getKey().getSignature()))
-                                        .map(JsonElement::getAsJsonObject)
-                                        .orElseThrow(() -> new IllegalStateException("Missing obf field"));
-                                methodValues.addProperty("searge", entry.getValue());
-                                methods.add(entry.getKey().getMcpName() + entry.getKey().getSignature(), methodValues);
-                            });
+                    addJsonValues(methods, mcpToNotch, mcpToSrg, mcpClass, SrgMap::getMethodMap,
+                            MethodMember::getCombinedName, MethodMember::getMappedName);
                 }
 
             });
@@ -148,6 +124,61 @@ class AsmLibExtension {
         }
         return GSON.toJson(root);
     }
+
+    // TODO: use polymorphism instead of passing functions
+    private static <T> void addJsonValues(JsonObject json,
+                                          SrgMap mcpToNotch, SrgMap mcpToSrg,
+                                          String parentClass,
+                                          Function<SrgMap, Map<String, Set<T>>> getMap,
+                                          Function<T, String> getHeader,
+                                          Function<T, String> getProperty)
+    {
+        final Set<T> notchMethods = getMap.apply(mcpToNotch).get(parentClass);
+        final Set<T> seargeMethods = getMap.apply(mcpToSrg).get(parentClass);
+
+        if (notchMethods == null || seargeMethods == null ) return; // this class has no members of type T
+
+        final Map<String, String> notchMap = notchMethods.stream()
+                .collect(mapToSelf(getHeader, getProperty));
+        final Map<String, String> seargeMap = seargeMethods.stream()
+                .collect(mapToSelf(getHeader, getProperty));
+
+        // map mcp name to a map that maps type to the type's mapping
+        // (e.g allMembers.get("player").get("notch").equals("c") == true)
+        // created by combining the notch and searge member maps
+        final Map<String, Map<String, String>> allMembers = new LinkedHashMap<>();
+        notchMap.forEach((fullMcp, notch) -> {
+            final String searge = seargeMap.get(fullMcp);
+            Objects.requireNonNull(searge, "Failed to find searge mapping for member: " + fullMcp); // TODO: check for missing obf members
+            final Map<String, String> inner = new LinkedHashMap<>();
+            inner.put("notch", notch);
+            inner.put("searge", searge);
+            allMembers.put(fullMcp, inner);
+        });
+
+        allMembers.forEach((fullMcp, map) -> {
+            JsonObject values = new JsonObject();
+            values.addProperty("notch", map.get("notch"));
+            values.addProperty("searge", map.get("searge"));
+            json.add(fullMcp, values);
+        });
+
+    }
+
+
+    private static <T, K, V> Collector<T, ?, Map<K, V>> mapToSelf(Function<? super T, ? extends K> keyExtractor,
+                                                                  Function<? super T, ? extends V> valueMapper)
+    {
+        return Collectors.toMap(
+                keyExtractor,
+                valueMapper,
+                (k1, k2) -> {throw new IllegalStateException("Duplicate key: " + k1);},
+                LinkedHashMap::new
+                );
+    }
+
+
+
 
     private SrgMap parseSrgFile(File file) {
         try (BufferedReader reader = newReader(file)) {

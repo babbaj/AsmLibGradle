@@ -6,13 +6,14 @@ public class MethodMember {
 
     private final String mcpName;
     private final String signature;
-    private final String parentClass;
+
+    private final String obfName;
 
 
-    public MethodMember(String name, String signature, String parentClass) {
+    public MethodMember(String name, String signature, String obfName) {
         this.mcpName = name;
         this.signature = signature;
-        this.parentClass = parentClass;
+        this.obfName = obfName;
     }
 
     public String getMcpName() {
@@ -23,9 +24,14 @@ public class MethodMember {
         return this.signature;
     }
 
-    public String getParentClass() {
-        return this.parentClass;
+    public String getCombinedName() {
+        return getMcpName() + getSignature();
     }
+
+    public String getMappedName() {
+        return this.obfName;
+    }
+
 
     @Override
     public boolean equals(Object other) {
