@@ -2,15 +2,24 @@ package net.futureclient.asmlib;
 
 import com.google.gson.*;
 import net.futureclient.asmlib.forgegradle.ForgeGradleVersion;
+import net.futureclient.asmlib.parser.srg.BasicClassInfoMap;
 import net.futureclient.asmlib.parser.srg.SrgMap;
 import net.futureclient.asmlib.parser.srg.SrgParser;
 import net.futureclient.asmlib.parser.srg.member.FieldMember;
 import net.futureclient.asmlib.parser.srg.member.MethodMember;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
+import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.compile.JavaCompile;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.AnnotationNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.MethodNode;
 
+import javax.annotation.Nonnull;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -18,20 +27,24 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.function.Function;
-import java.util.function.Supplier;
+import java.util.function.Predicate;
 import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 public class AsmLibExtension {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
+    private final String CLASS_TRANSFORMER = "Lnet/futureclient/asm/transformer/annotation/Transformer;";
+    private final String CLASS_INJECT = "Lnet/futureclient/asm/transformer/annotation/Inject;";
+
     private final Project project;
     private final ForgeGradleVersion forgeGradleVersion;
 
-    private Set<SourceSet> asmLibSourceSets = new HashSet<>();
-    private Set<String> asmLibMappingConfigs = new HashSet<>();
+    // map SourceSet to refmap output and config files
+    private final Map<SourceSet, ProjectEntry> asmLibSourceSets = new HashMap<>();
 
     private File mcpToNotch;
     private File mcpToSrg;
@@ -39,26 +52,37 @@ public class AsmLibExtension {
     public AsmLibExtension(Project project, ForgeGradleVersion forgeGradleVersion) {
         this.project = project;
         this.forgeGradleVersion = forgeGradleVersion;
+        project.afterEvaluate(p -> {
+            if (asmLibSourceSets.isEmpty())
+                throw new IllegalStateException("No SourceSets have been added!");
+        });
     }
 
-    public void add(SourceSet sourceSet, String... asmLibMappingConfigs) {
-        this.asmLibSourceSets.add(sourceSet);
-        this.asmLibMappingConfigs.addAll(Arrays.asList(asmLibMappingConfigs));
 
-        project.afterEvaluate(p -> this.configure(sourceSet));
+    public void add(SourceSet sourceSet, String mappingOut, String[] mappingConfigs) {
+        final ProjectEntry entry = new ProjectEntry(mappingOut, new HashSet<>(Arrays.asList(mappingConfigs)));
+        asmLibSourceSets.put(sourceSet, entry);
+
+        project.afterEvaluate(__ -> this.configure(sourceSet));
     }
+
+    // overload for gradle
+    public void add(SourceSet sourceSet, String mappingOut, Collection<String> mappingConfigs) {
+        add(sourceSet, mappingOut, mappingConfigs.toArray(new String[0]));
+    }
+
 
     private void configure(SourceSet sourceSet) {
         Task t = project.getTasks().getByName(sourceSet.getCompileJavaTaskName());
+        Objects.requireNonNull(t);
         if (!(t instanceof JavaCompile))
             throw new IllegalStateException("Can not add non-java SourceSet (" + sourceSet + ")");
         final JavaCompile compileTask = (JavaCompile) t;
 
-        Path tempDir = this.getResourcePath(sourceSet);
+        Path tempDir = this.getResourceOutput(sourceSet);
         Path testFile = tempDir.resolve("test");
 
         compileTask.doFirst(task -> {
-
             switch (this.forgeGradleVersion) {
                 case FORGEGRADLE_2_X:
                     final Task genSrgs = project.getTasks().getByName("genSrgs");
@@ -77,9 +101,42 @@ public class AsmLibExtension {
         });
 
         compileTask.doLast(task -> {
-            System.out.println("gonna put file here");
+            // TODO: read resource files and generate mappings based on the class files
+            final Set<String> configFiles = asmLibSourceSets.get(sourceSet).configs;
+            final Set<String> transformerClasses = stream(sourceSet.getResources())
+                    .filter(f -> configFiles.contains(f.getName()))
+                    .map(this::getTransformerClasses)
+                    .reduce(new HashSet<>(), (s1, s2) -> {
+                        s1.addAll(s2);
+                        return s1;
+                    });
 
-            final String json = serializeJson(parseSrgFile(mcpToNotch), parseSrgFile(mcpToSrg));
+            final Path classesOutput = sourceSet.getOutput().getClassesDir().toPath();
+
+            // these classes should be guaranteed to not have been touched by forgegradle
+            final BasicClassInfoMap transformers = transformerClasses.stream()
+                    .map(name -> name.replace("/", System.getProperty("file.separator")) + ".class")
+                    .map(classesOutput::resolve)
+                    .filter(p -> {
+                        if (!Files.exists(p)) {
+                            System.err.println("Unknown class file: " + p);
+                            return false;
+                        }
+                        return true;
+                    })
+                    .map(this::readClassAnnotations)
+                    .collect(
+                            () -> new BasicClassInfoMap(new HashMap<>(), new HashMap<>(), new HashSet<>()), // TODO: make this not gay
+                            (map, info) -> {
+                                map.getClasses().add(info.getClassName());
+                                merge(map.getFieldMap(), info.getClassName(), info.getFields());
+                                merge(map.getMethodMap(), info.getClassName(), info.getMethods());
+                            },
+                            (m1, m2) -> {throw new UnsupportedOperationException("parallel");} // this might be parallelizable
+                    );
+
+
+            final String json = serializeJson(parseSrgFile(mcpToNotch), parseSrgFile(mcpToSrg), transformers);
             try {
                 System.out.println("writing the file...");
                 Files.write(testFile, json.getBytes(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
@@ -89,7 +146,117 @@ public class AsmLibExtension {
         });
     }
 
-    private String serializeJson(SrgMap mcpToNotch, SrgMap mcpToSrg) {
+
+    private TransformerInfo readClassAnnotations(Path path) {
+        try (InputStream reader = Files.newInputStream(path)) {
+            final ClassNode cn = new ClassNode();
+            final ClassReader cr = new ClassReader(reader);
+            cr.accept(cn, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+
+            final String targetClass = readTypeAnnotation(cn);
+            final Set<String> targetMethods = readMethodAnnotations(cn);
+            final Set<String> fields = Collections.emptySet();
+
+            System.out.println("TargetClass: " + targetClass);
+            System.out.println("TargetMethods: " + targetMethods);
+
+            return new TransformerInfo(targetClass, targetMethods, fields);
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    @Nonnull
+    private String readTypeAnnotation(ClassNode clazz) {
+        return Optional.ofNullable(clazz.visibleAnnotations)
+                .flatMap(list ->
+                        list.stream()
+                                .filter(node -> node.desc.equals(CLASS_TRANSFORMER))
+                                .map(node ->
+                                        this.<String>getAnnotationValue("target", node)
+                                                .orElseGet(() ->
+                                                        this.<Type>getAnnotationValue("value", node)
+                                                                .map(Type::getInternalName)
+                                                                // invalid annotation, shut it down
+                                                                .orElseThrow(() -> new IllegalStateException("@Transformer annotation in class \"" + clazz.name + "\" is missing a target")) // TODO: custom exception
+                                                )
+                                )
+                                .findFirst()
+                )
+                .orElseThrow(() -> new IllegalStateException("Class \"" + clazz.name + "\" is missing @Transformer annotation"))
+                .replace(".", "/");
+    }
+
+    private Set<String> readMethodAnnotations(ClassNode clazz) {
+        return clazz.methods.stream()
+                .map(m -> m.visibleAnnotations != null ? m.visibleAnnotations : Collections.<AnnotationNode>emptyList())
+                .flatMap(List::stream)
+                .filter(m -> CLASS_INJECT.equals(m.desc))
+                .map(node -> toDescriptor(node, clazz))
+                .collect(Collectors.toSet());
+    }
+
+    @SuppressWarnings("unchecked")
+    private String toDescriptor(AnnotationNode annotation, ClassNode clazz) {
+        {
+            final Optional<String> target = getAnnotationValue("target", annotation);
+            if (target.isPresent()) return target.get();
+        }
+
+        final String methodName = (String) getAnnotationValue("name", annotation)
+                .orElseThrow(() -> new IllegalStateException("@Inject is missing value \"name\" in class \"" + clazz.name + "\""));
+        List<Type> args = (List<Type>) getAnnotationValue("args", annotation).orElse(Collections.emptyList());
+        final String combinedArgs = args.stream()
+                .map(Type::getDescriptor)
+                .collect(Collectors.joining());
+        final Type returnType = (Type) getAnnotationValue("ret", annotation).orElse(Type.VOID_TYPE);
+
+        return String.format("%s(%s)%s", methodName, combinedArgs, returnType.getDescriptor());
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> Optional<T> getAnnotationValue(String name, AnnotationNode node) {
+        Iterator<Object> iterator = node.values.iterator();
+        while (iterator.hasNext()) {
+            String valueName = (String) iterator.next();
+            if (name.equals(valueName))
+                return Optional.of((T) iterator.next());
+            else
+                iterator.next();
+        }
+        return Optional.empty();
+    }
+
+
+    private Set<String> getTransformerClasses(File configFile) {
+        try {
+            final JsonObject root = new JsonParser().parse(Files.newBufferedReader(configFile.toPath())).getAsJsonObject();
+            final JsonObject transformers = root.getAsJsonObject("transformers");
+            if (transformers == null) { // TODO: use logger
+                System.err.println("[AsmLib] Config file " + configFile.getName() + " is missing element \"transformers\"");
+                return Collections.emptySet();
+            }
+            // separated by '/'
+            final Set<String> fullClassNames = transformers.entrySet() // mostly copy/pasted from asmlib
+                    .stream()
+                    .collect(HashSet::new,
+                            (set, entry) -> {
+                                final String fullPackage = entry.getKey();
+                                stream(entry.getValue().getAsJsonArray())
+                                        .map(JsonElement::getAsString)
+                                        .map(clazz -> (fullPackage + '.' + clazz).replaceAll("[./]+", "/"))
+                                        .forEach(set::add);
+                            },
+                            Set::addAll
+                    );
+            return fullClassNames;
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    // TODO: use filter
+    private String serializeJson(SrgMap mcpToNotch, SrgMap mcpToSrg, BasicClassInfoMap toSave) {
         System.out.println("Serializing json");
         final JsonObject root = new JsonObject();
         {
@@ -100,6 +267,8 @@ public class AsmLibExtension {
             System.out.println(classNames.size() + " classes");
 
             classNames.forEach((mcpClass, obfClass) -> {
+                if (!toSave.getClasses().contains(mcpClass)) return; // filter
+
                 final JsonObject classJson = new JsonObject();
                 mappings.add(mcpClass, classJson);
 
@@ -109,14 +278,14 @@ public class AsmLibExtension {
                     classJson.add("fields", fields);
 
                     addJsonValues(fields, mcpToNotch, mcpToSrg, mcpClass, SrgMap::getFieldMap,
-                            FieldMember::getName, FieldMember::getObfName);
+                            FieldMember::getName, FieldMember::getObfName, field -> toSave.getFieldMap().get(mcpClass).contains(field.getName()));
                 }
                 {
                     final JsonObject methods = new JsonObject();
                     classJson.add("methods", methods);
 
                     addJsonValues(methods, mcpToNotch, mcpToSrg, mcpClass, SrgMap::getMethodMap,
-                            MethodMember::getCombinedName, MethodMember::getMappedName);
+                            MethodMember::getCombinedName, MethodMember::getMappedName, method -> toSave.getMethodMap().get(mcpClass).contains(method.getCombinedName()));
                 }
 
             });
@@ -131,16 +300,19 @@ public class AsmLibExtension {
                                           String parentClass,
                                           Function<SrgMap, Map<String, Set<T>>> getMap,
                                           Function<T, String> getHeader,
-                                          Function<T, String> getProperty)
+                                          Function<T, String> getProperty,
+                                          Predicate<T> filter)
     {
         final Set<T> notchMethods = getMap.apply(mcpToNotch).get(parentClass);
         final Set<T> seargeMethods = getMap.apply(mcpToSrg).get(parentClass);
 
-        if (notchMethods == null || seargeMethods == null ) return; // this class has no members of type T
+        if (notchMethods == null || seargeMethods == null) return; // this class has no members of type T
 
         final Map<String, String> notchMap = notchMethods.stream()
+                .filter(filter)
                 .collect(mapToSelf(getHeader, getProperty));
         final Map<String, String> seargeMap = seargeMethods.stream()
+                .filter(filter)
                 .collect(mapToSelf(getHeader, getProperty));
 
         // map mcp name to a map that maps type to the type's mapping
@@ -166,18 +338,30 @@ public class AsmLibExtension {
     }
 
 
-    private static <T, K, V> Collector<T, ?, Map<K, V>> mapToSelf(Function<? super T, ? extends K> keyExtractor,
-                                                                  Function<? super T, ? extends V> valueMapper)
-    {
+    private static <T, K, V> Collector<T, ?, Map<K, V>> mapToSelf(Function<T, K> keyExtractor,
+                                                                  Function<T, V> valueMapper) {
         return Collectors.toMap(
                 keyExtractor,
                 valueMapper,
-                (k1, k2) -> {throw new IllegalStateException("Duplicate key: " + k1);},
+                (k1, k2) -> {
+                    throw new IllegalStateException("Duplicate key: " + k1);
+                },
                 LinkedHashMap::new
-                );
+        );
     }
 
+    private <T> Stream<T> stream(Iterable<T> iterable) {
+        return StreamSupport.stream(iterable.spliterator(), false);
+    }
 
+    private static <K, V> void merge(Map<K, Set<V>> map, K key, Set<V> newValues) {
+        map.merge(key,
+                new HashSet<>(newValues),
+                (s1, s2) -> {
+                    s1.addAll(s2);
+                    return s1;
+                });
+    }
 
 
     private SrgMap parseSrgFile(File file) {
@@ -193,7 +377,7 @@ public class AsmLibExtension {
     }
 
 
-    private Path getResourcePath(SourceSet sourceSet) {
+    private Path getResourceOutput(SourceSet sourceSet) {
         return sourceSet.getOutput().getResourcesDir().toPath();
     }
 }
