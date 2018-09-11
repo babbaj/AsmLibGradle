@@ -101,7 +101,6 @@ public class AsmLibExtension {
         });
 
         compileTask.doLast(task -> {
-            // TODO: read resource files and generate mappings based on the class files
             final Set<String> configFiles = asmLibSourceSets.get(sourceSet).configs;
             final Set<String> transformerClasses = stream(sourceSet.getResources())
                     .filter(f -> configFiles.contains(f.getName()))
@@ -171,21 +170,22 @@ public class AsmLibExtension {
         return Optional.ofNullable(clazz.visibleAnnotations)
                 .flatMap(list ->
                         list.stream()
-                                .filter(node -> node.desc.equals(CLASS_TRANSFORMER))
-                                .map(node ->
-                                        this.<String>getAnnotationValue("target", node)
-                                                .orElseGet(() ->
-                                                        this.<Type>getAnnotationValue("value", node)
-                                                                .map(Type::getInternalName)
-                                                                // invalid annotation, shut it down
-                                                                .orElseThrow(() -> new IllegalStateException("@Transformer annotation in class \"" + clazz.name + "\" is missing a target")) // TODO: custom exception
-                                                )
+                            .filter(node -> node.desc.equals(CLASS_TRANSFORMER))
+                            .map(node ->
+                                this.<String>getAnnotationValue("target", node)
+                                    .orElseGet(() ->
+                                        this.<Type>getAnnotationValue("value", node)
+                                                .map(Type::getInternalName)
+                                                // invalid annotation, shut it down
+                                                .orElseThrow(() -> new IllegalStateException("@Transformer annotation in class \"" + clazz.name + "\" is missing a target")) // TODO: custom exception
+                                    )
                                 )
                                 .findFirst()
                 )
                 .orElseThrow(() -> new IllegalStateException("Class \"" + clazz.name + "\" is missing @Transformer annotation"))
                 .replace(".", "/");
     }
+
 
     private Set<String> readMethodAnnotations(ClassNode clazz) {
         return clazz.methods.stream()
@@ -278,19 +278,16 @@ public class AsmLibExtension {
                     classJson.add("fields", fields);
 
                     addJsonValues(fields, mcpToNotch, mcpToSrg, mcpClass, SrgMap::getFieldMap,
-                            FieldMember::getName, FieldMember::getObfName, field -> toSave.getFieldMap().get(mcpClass).contains(field.getName()));
+                            FieldMember::getName, FieldMember::getObfName,
+                            field -> toSave.getFieldMap().get(mcpClass).contains(field.getName()));
                 }
                 {
                     final JsonObject methods = new JsonObject();
                     classJson.add("methods", methods);
 
                     addJsonValues(methods, mcpToNotch, mcpToSrg, mcpClass, SrgMap::getMethodMap,
-                            MethodMember::getCombinedName, MethodMember::getMappedName, method -> {
-                                Set<String> memes = toSave.getMethodMap().get(mcpClass);
-                                System.out.println(mcpClass);
-                                System.out.println(memes);
-                                return memes.contains(method.getCombinedName());
-                            });
+                            MethodMember::getCombinedName, MethodMember::getMappedName,
+                            method -> toSave.getMethodMap().get(mcpClass).contains(method.getCombinedName()));
                 }
 
             });
