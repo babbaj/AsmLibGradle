@@ -95,9 +95,6 @@ public class AsmLibExtension {
 
             Objects.requireNonNull(mcpToNotch);
             Objects.requireNonNull(mcpToSrg);
-
-            System.out.println("GenMappingsTask: " + mcpToNotch);
-            System.out.println("GenMappingsTask: " + mcpToSrg);
         });
 
         compileTask.doLast(task -> {
@@ -155,9 +152,6 @@ public class AsmLibExtension {
             final String targetClass = readTypeAnnotation(cn);
             final Set<String> targetMethods = readMethodAnnotations(cn);
             final Set<String> fields = Collections.emptySet();
-
-            System.out.println("TargetClass: " + targetClass);
-            System.out.println("TargetMethods: " + targetMethods);
 
             return new TransformerInfo(targetClass, fields, targetMethods);
         } catch (IOException ex) {
@@ -255,7 +249,6 @@ public class AsmLibExtension {
         }
     }
 
-    // TODO: use filter
     private String serializeJson(SrgMap mcpToNotch, SrgMap mcpToSrg, BasicClassInfoMap toSave) {
         System.out.println("Serializing json");
         final JsonObject root = new JsonObject();
