@@ -278,16 +278,14 @@ public class AsmLibExtension {
                     classJson.add("fields", fields);
 
                     addJsonValues(fields, mcpToNotch, mcpToSrg, mcpClass, SrgMap::getFieldMap,
-                            FieldMember::getName, FieldMember::getObfName,
-                            field -> toSave.getFieldMap().get(mcpClass).contains(field.getName()));
+                            FieldMember::getName, FieldMember::getObfName, toSave.getFieldMap().get(mcpClass));
                 }
                 {
                     final JsonObject methods = new JsonObject();
                     classJson.add("methods", methods);
 
                     addJsonValues(methods, mcpToNotch, mcpToSrg, mcpClass, SrgMap::getMethodMap,
-                            MethodMember::getCombinedName, MethodMember::getMappedName,
-                            method -> toSave.getMethodMap().get(mcpClass).contains(method.getCombinedName()));
+                            MethodMember::getCombinedName, MethodMember::getMappedName, toSave.getMethodMap().get(mcpClass));
                 }
 
             });
@@ -303,7 +301,7 @@ public class AsmLibExtension {
                                           Function<SrgMap, Map<String, Set<T>>> getMap,
                                           Function<T, String> getHeader,
                                           Function<T, String> getProperty,
-                                          Predicate<T> filter)
+                                          Set<String> toSave)
     {
         final Set<T> notchMethods = getMap.apply(mcpToNotch).get(parentClass);
         final Set<T> seargeMethods = getMap.apply(mcpToSrg).get(parentClass);
@@ -311,10 +309,8 @@ public class AsmLibExtension {
         if (notchMethods == null || seargeMethods == null) return; // this class has no members of type T
 
         final Map<String, String> notchMap = notchMethods.stream()
-                .filter(filter)
                 .collect(mapToSelf(getHeader, getProperty));
         final Map<String, String> seargeMap = seargeMethods.stream()
-                .filter(filter)
                 .collect(mapToSelf(getHeader, getProperty));
 
         // map mcp name to a map that maps type to the type's mapping
@@ -322,6 +318,8 @@ public class AsmLibExtension {
         // created by combining the notch and searge member maps
         final Map<String, Map<String, String>> allMembers = new LinkedHashMap<>();
         notchMap.forEach((fullMcp, notch) -> {
+            if (!toSave.contains(fullMcp)) return;
+
             final String searge = seargeMap.get(fullMcp);
             Objects.requireNonNull(searge, "Failed to find searge mapping for member: " + fullMcp); // TODO: check for missing obf members
             final Map<String, String> inner = new LinkedHashMap<>();
