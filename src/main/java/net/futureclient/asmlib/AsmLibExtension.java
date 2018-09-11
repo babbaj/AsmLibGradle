@@ -160,7 +160,7 @@ public class AsmLibExtension {
             System.out.println("TargetClass: " + targetClass);
             System.out.println("TargetMethods: " + targetMethods);
 
-            return new TransformerInfo(targetClass, targetMethods, fields);
+            return new TransformerInfo(targetClass, fields, targetMethods);
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
@@ -285,7 +285,12 @@ public class AsmLibExtension {
                     classJson.add("methods", methods);
 
                     addJsonValues(methods, mcpToNotch, mcpToSrg, mcpClass, SrgMap::getMethodMap,
-                            MethodMember::getCombinedName, MethodMember::getMappedName, method -> toSave.getMethodMap().get(mcpClass).contains(method.getCombinedName()));
+                            MethodMember::getCombinedName, MethodMember::getMappedName, method -> {
+                                Set<String> memes = toSave.getMethodMap().get(mcpClass);
+                                System.out.println(mcpClass);
+                                System.out.println(memes);
+                                return memes.contains(method.getCombinedName());
+                            });
                 }
 
             });
