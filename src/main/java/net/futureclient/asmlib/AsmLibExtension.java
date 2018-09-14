@@ -10,6 +10,7 @@ import net.futureclient.asmlib.parser.srg.member.MethodMember;
 import org.gradle.api.NamedDomainObjectContainer;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
+import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.compile.JavaCompile;
 import org.objectweb.asm.ClassReader;
@@ -18,12 +19,11 @@ import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.io.*;
-import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collector;
@@ -42,11 +42,15 @@ public class AsmLibExtension {
     private final Project project;
     private final ForgeGradleVersion forgeGradleVersion;
 
-    // map SourceSet to refmap output and config files
+    // map SourceSet to mappingFile output and config files
     private final Map<SourceSet, ProjectEntry> asmLibSourceSets = new HashMap<>();
 
     private File mcpToNotch;
     private File mcpToSrg;
+
+
+    @Input
+    public @Nullable String mappingType;
 
     public AsmLibExtension(Project project, ForgeGradleVersion forgeGradleVersion) {
         this.project = project;
@@ -79,27 +83,10 @@ public class AsmLibExtension {
             throw new IllegalStateException("Can not add non-java SourceSet (" + sourceSet + ")");
         final JavaCompile compileTask = (JavaCompile) t;
 
-        final Path tempDir = this.getResourceOutput(sourceSet);
-        final Path testFile = tempDir.resolve("test");
-        final Path mappingTypeFile = tempDir.resolve(MAPPING_TYPE_FILE);
+        final Path resourceOutput = this.getResourceOutput(sourceSet);
+        final Path mappingOutput = resourceOutput.resolve(asmLibSourceSets.get(sourceSet).mappingFile);
 
-        // if it fails to find this then its probably a forgegradle version problem
-        final Set<Object> reobf = (NamedDomainObjectContainer<Object>)project.getExtensions().getByName("reobf");
-
-        final long mappingTypesUsed = getUsedMappingTypes(reobf).count();
-        if (mappingTypesUsed == 0)
-            throw new IllegalStateException("Failed to find mapping type (no jar task?)");
-        if (mappingTypesUsed > 1)
-            throw new IllegalStateException("Ambiguous mapping type (multiple jars with different mapping types?)");
-        // TODO: allow manual override
-        final MappingType mappingType = getUsedMappingTypes(reobf).findFirst().get();
-        System.out.println("Using mapping type: " + mappingType);
-        try {
-            Files.write(mappingTypeFile, mappingType.name().getBytes());
-        } catch (IOException ex) {
-            throw new RuntimeException(ex);
-        }
-
+        configureMappingType(resourceOutput);
 
         compileTask.doFirst(task -> {
             switch (this.forgeGradleVersion) {
@@ -153,12 +140,40 @@ public class AsmLibExtension {
 
             final String json = serializeJson(parseSrgFile(mcpToNotch), parseSrgFile(mcpToSrg), transformers);
             try {
-                System.out.println("writing the file...");
-                Files.write(testFile, json.getBytes());
+                //System.out.println("writing the file...");
+                Files.write(mappingOutput, json.getBytes());
             } catch (IOException ex) {
                 ex.printStackTrace();
             }
         });
+    }
+
+    private void configureMappingType(Path resourceOutput) {
+        final Path mappingTypeFile = resourceOutput.resolve(MAPPING_TYPE_FILE);
+
+        MappingType mappingType;
+        if (this.mappingType != null) {
+            mappingType = MappingType.valueOf(this.mappingType);
+        } else {
+            // if it fails to find this then its probably a forgegradle version problem
+            final Set<Object> reobf = (NamedDomainObjectContainer<Object>)project.getExtensions().getByName("reobf");
+
+            final long mappingTypesUsed = getUsedMappingTypes(reobf).count();
+            if (mappingTypesUsed == 0)
+                throw new IllegalStateException("Failed to find mapping type (no jar task?)");
+            if (mappingTypesUsed > 1)
+                throw new IllegalStateException("Ambiguous mapping type (multiple jars with different mapping types?)");
+
+            mappingType = getUsedMappingTypes(reobf).findFirst().get();
+        }
+
+
+        //System.out.println("Using mapping type: " + mappingType);
+        try {
+            Files.write(mappingTypeFile, mappingType.name().getBytes());
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
+        }
     }
 
     private Stream<MappingType> getUsedMappingTypes(Set<Object> reobf) {
