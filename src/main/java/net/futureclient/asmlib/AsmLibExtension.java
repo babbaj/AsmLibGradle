@@ -44,6 +44,7 @@ public class AsmLibExtension {
 
     // map SourceSet to mappingFile output and config files
     private final Map<SourceSet, ProjectEntry> asmLibSourceSets = new HashMap<>();
+    private final Set<Path> toDeleteAfterBuild = new HashSet<>(); // files in the resources folder that we need to delete
 
     private File mcpToNotch;
     private File mcpToSrg;
@@ -83,8 +84,20 @@ public class AsmLibExtension {
             throw new IllegalStateException("Can not add non-java SourceSet (" + sourceSet + ")");
         final JavaCompile compileTask = (JavaCompile) t;
 
+        // delete files we put in the resource output so they dont stick around
+        project.getTasks().getByName("assemble").doLast(__ -> {
+            toDeleteAfterBuild.forEach(path -> {
+                try {
+                    Files.delete(path);
+                } catch (IOException ex) {
+                    throw new RuntimeException(ex);
+                }
+            });
+        });
+
         final Path resourceOutput = this.getResourceOutput(sourceSet);
         final Path mappingOutput = resourceOutput.resolve(asmLibSourceSets.get(sourceSet).mappingFile);
+        toDeleteAfterBuild.add(mappingOutput);
 
         configureMappingType(resourceOutput);
 
@@ -150,6 +163,7 @@ public class AsmLibExtension {
 
     private void configureMappingType(Path resourceOutput) {
         final Path mappingTypeFile = resourceOutput.resolve(MAPPING_TYPE_FILE);
+        toDeleteAfterBuild.add(mappingTypeFile);
 
         MappingType mappingType;
         if (this.mappingType != null) {
