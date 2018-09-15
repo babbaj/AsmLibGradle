@@ -5,11 +5,11 @@ import java.util.Set;
 
 public class ProjectEntry {
 
-    public final String refmap;
+    public final String mappingFile;
     public final Set<String> configs;
 
-    public ProjectEntry(String refmap, Set<String> configs) {
-        this.refmap = refmap;
+    public ProjectEntry(String mappingFile, Set<String> configs) {
+        this.mappingFile = mappingFile;
         this.configs = Collections.unmodifiableSet(configs);
     }
 }

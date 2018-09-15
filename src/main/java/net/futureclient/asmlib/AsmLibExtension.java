@@ -264,10 +264,9 @@ public class AsmLibExtension {
         Iterator<Object> iterator = node.values.iterator();
         while (iterator.hasNext()) {
             String valueName = (String) iterator.next();
+            T next = (T)iterator.next();
             if (name.equals(valueName))
-                return Optional.of((T) iterator.next());
-            else
-                iterator.next();
+                return Optional.of(next);
         }
         return Optional.empty();
     }
