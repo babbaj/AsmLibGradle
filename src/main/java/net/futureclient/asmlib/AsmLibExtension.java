@@ -215,23 +215,20 @@ public class AsmLibExtension {
 
     @Nonnull
     private String readTypeAnnotation(ClassNode clazz) {
-        return Optional.ofNullable(clazz.visibleAnnotations)
+        final AnnotationNode transformer = Optional.ofNullable(clazz.visibleAnnotations)
                 .flatMap(list ->
                         list.stream()
                             .filter(node -> node.desc.equals(CLASS_TRANSFORMER))
-                            .map(node ->
-                                this.<String>getAnnotationValue("target", node)
-                                    .orElseGet(() ->
-                                        this.<Type>getAnnotationValue("value", node)
-                                                .map(Type::getInternalName)
-                                                // invalid annotation, shut it down
-                                                .orElseThrow(() -> new IllegalStateException("@Transformer annotation in class \"" + clazz.name + "\" is missing a target")) // TODO: custom exception
-                                    )
-                                )
-                                .findFirst()
+                            .findFirst()
                 )
-                .orElseThrow(() -> new IllegalStateException("Class \"" + clazz.name + "\" is missing @Transformer annotation"))
-                .replace(".", "/");
+                .orElseThrow(() -> new IllegalStateException("Class \"" + clazz.name + "\" is missing @Transformer annotation"));
+
+        return Stream.of("target", "value")
+            .map(name -> this.<Type>getAnnotationValue(name, transformer))
+            .filter(Optional::isPresent).map(Optional::get)
+            .map(Type::getInternalName)
+            .findFirst()
+            .orElseThrow(() -> new IllegalStateException("@Transformer annotation in class \"" + clazz.name + "\" is missing a target"));
     }
 
 
