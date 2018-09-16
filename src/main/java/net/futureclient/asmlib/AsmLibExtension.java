@@ -90,7 +90,7 @@ public class AsmLibExtension {
                 try {
                     Files.delete(path);
                 } catch (IOException ex) {
-                    throw new RuntimeException(ex);
+                    //throw new RuntimeException(ex); // something probably went wrong
                 }
             });
         });
@@ -144,6 +144,8 @@ public class AsmLibExtension {
                             () -> new BasicClassInfoMap(new HashMap<>(), new HashMap<>(), new HashSet<>()), // TODO: make this not gay
                             (map, info) -> {
                                 map.getClasses().add(info.getClassName());
+                                map.getClasses().addAll(info.getReferencedClasses());
+
                                 merge(map.getFieldMap(), info.getClassName(), info.getFields());
                                 merge(map.getMethodMap(), info.getClassName(), info.getMethods());
                             },
@@ -153,7 +155,6 @@ public class AsmLibExtension {
 
             final String json = serializeJson(parseSrgFile(mcpToNotch), parseSrgFile(mcpToSrg), transformers);
             try {
-                //System.out.println("writing the file...");
                 Files.write(mappingOutput, json.getBytes());
             } catch (IOException ex) {
                 ex.printStackTrace();
@@ -223,26 +224,30 @@ public class AsmLibExtension {
                 )
                 .orElseThrow(() -> new IllegalStateException("Class \"" + clazz.name + "\" is missing @Transformer annotation"));
 
-        return Stream.of("target", "value")
-            .map(name -> this.<Type>getAnnotationValue(name, transformer))
-            .filter(Optional::isPresent).map(Optional::get)
-            .map(Type::getInternalName)
-            .findFirst()
-            .orElseThrow(() -> new IllegalStateException("@Transformer annotation in class \"" + clazz.name + "\" is missing a target"));
+        return Optional.of(transformer)
+                .flatMap(node -> this.<String>getAnnotationValue("target", transformer))
+                .orElseGet(() ->
+                    this.<Type>getAnnotationValue("value", transformer)
+                            .map(Type::getInternalName)
+                            .orElseThrow(() -> new IllegalStateException("@Transformer annotation in class \"" + clazz.name + "\" is missing a target"))
+                );
     }
 
-
-    private Set<String> readMethodAnnotations(ClassNode clazz) {
+    private Stream<AnnotationNode> getInjectAnnotations(ClassNode clazz) {
         return clazz.methods.stream()
                 .map(m -> m.visibleAnnotations != null ? m.visibleAnnotations : Collections.<AnnotationNode>emptyList())
                 .flatMap(List::stream)
-                .filter(m -> CLASS_INJECT.equals(m.desc))
-                .map(node -> toDescriptor(node, clazz))
+                .filter(m -> CLASS_INJECT.equals(m.desc));
+    }
+
+    private Set<String> readMethodAnnotations(ClassNode clazz) {
+        return getInjectAnnotations(clazz)
+                .map(node -> getTarget(node, clazz))
                 .collect(Collectors.toSet());
     }
 
     @SuppressWarnings("unchecked")
-    private String toDescriptor(AnnotationNode annotation, ClassNode clazz) {
+    private String getTarget(AnnotationNode annotation, ClassNode clazz) {
         {
             final Optional<String> target = getAnnotationValue("target", annotation);
             if (target.isPresent()) return target.get();
@@ -255,6 +260,7 @@ public class AsmLibExtension {
                 .map(Type::getDescriptor)
                 .collect(Collectors.joining());
         final Type returnType = (Type) getAnnotationValue("ret", annotation).orElse(Type.VOID_TYPE);
+
 
         return String.format("%s(%s)%s", methodName, combinedArgs, returnType.getDescriptor());
     }
@@ -300,14 +306,12 @@ public class AsmLibExtension {
     }
 
     private String serializeJson(SrgMap mcpToNotch, SrgMap mcpToSrg, BasicClassInfoMap toSave) {
-        System.out.println("Serializing json");
         final JsonObject root = new JsonObject();
         {
             final JsonObject mappings = new JsonObject();
             root.add("mappings", mappings);
             // map mcp name to notch name
             final Map<String, String> classNames = mcpToNotch.getClassMap();
-            System.out.println(classNames.size() + " classes");
 
             classNames.forEach((mcpClass, obfClass) -> {
                 if (!toSave.getClasses().contains(mcpClass)) return; // filter
@@ -321,14 +325,15 @@ public class AsmLibExtension {
                     classJson.add("fields", fields);
 
                     addJsonValues(fields, mcpToNotch, mcpToSrg, mcpClass, SrgMap::getFieldMap,
-                            FieldMember::getName, FieldMember::getObfName, toSave.getFieldMap().get(mcpClass));
+                            FieldMember::getName, FieldMember::getObfName, toSave.getFieldMap().getOrDefault(mcpClass, Collections.emptySet()));
                 }
                 {
                     final JsonObject methods = new JsonObject();
                     classJson.add("methods", methods);
 
+                    // getOrDefault because referenced classes return null
                     addJsonValues(methods, mcpToNotch, mcpToSrg, mcpClass, SrgMap::getMethodMap,
-                            MethodMember::getCombinedName, MethodMember::getMappedName, toSave.getMethodMap().get(mcpClass));
+                            MethodMember::getCombinedName, MethodMember::getMappedName, toSave.getMethodMap().getOrDefault(mcpClass, Collections.emptySet()));
                 }
 
             });

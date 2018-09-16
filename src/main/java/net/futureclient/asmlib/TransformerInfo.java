@@ -1,11 +1,16 @@
 package net.futureclient.asmlib;
 
+import org.objectweb.asm.Type;
+
 import java.util.Collections;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public final class TransformerInfo {
 
     private final String className;
+
     private final Set<String> fields;
     private final Set<String> methods;
 
@@ -25,5 +30,21 @@ public final class TransformerInfo {
 
     public Set<String> getMethods() {
         return this.methods;
+    }
+
+    public Set<String> getReferencedClasses() {
+        return getMethods().stream()
+                .map(str -> str.replaceAll("^.+(?=\\()", "")) // strip name
+                .map(Type::getMethodType)
+                .flatMap(type -> Stream.concat(Stream.of(type.getArgumentTypes()), Stream.of(type.getReturnType())))
+                .filter(type -> type.getSort() == Type.OBJECT || type.getSort() == Type.ARRAY)
+                .map(this::removeArray)
+                .map(Type::getInternalName)
+                .collect(Collectors.toSet());
+    }
+
+    private Type removeArray(Type type) {
+        if (type.getSort() == Type.OBJECT) return type;
+        return Type.getObjectType(type.getInternalName().replaceAll("^\\[+", ""));
     }
 }
