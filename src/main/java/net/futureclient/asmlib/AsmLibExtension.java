@@ -154,9 +154,7 @@ public class AsmLibExtension {
                                 merge(map.getFieldMap(), info.getClassName(), info.getFields());
                                 merge(map.getMethodMap(), info.getClassName(), info.getMethods());
                             },
-                            (m1, m2) -> {
-                                throw new UnsupportedOperationException("parallel");
-                            } // this might be parallelizable
+                            (m1, m2) -> { throw new UnsupportedOperationException("parallel"); } // this might be parallelizable
                     );
 
 
@@ -227,17 +225,17 @@ public class AsmLibExtension {
         final AnnotationNode transformer = Optional.ofNullable(clazz.visibleAnnotations)
                 .flatMap(list ->
                         list.stream()
-                                .filter(node -> node.desc.equals(CLASS_TRANSFORMER))
-                                .findFirst()
+                            .filter(node -> node.desc.equals(CLASS_TRANSFORMER))
+                            .findFirst()
                 )
                 .orElseThrow(() -> new IllegalStateException("Class \"" + clazz.name + "\" is missing @Transformer annotation"));
 
         return Optional.of(transformer)
                 .flatMap(node -> this.<String>getAnnotationValue("target", transformer))
                 .orElseGet(() ->
-                        this.<Type>getAnnotationValue("value", transformer)
-                                .map(Type::getInternalName)
-                                .orElseThrow(() -> new IllegalStateException("@Transformer annotation in class \"" + clazz.name + "\" is missing a target"))
+                    this.<Type>getAnnotationValue("value", transformer)
+                            .map(Type::getInternalName)
+                            .orElseThrow(() -> new IllegalStateException("@Transformer annotation in class \"" + clazz.name + "\" is missing a target"))
                 );
     }
 
@@ -357,7 +355,8 @@ public class AsmLibExtension {
                                           Function<SrgMap, Map<String, Set<T>>> getMap,
                                           Function<T, String> getHeader,
                                           Function<T, String> getProperty,
-                                          Set<String> toSave) {
+                                          Set<String> toSave)
+    {
         final Set<T> notchMethods = getMap.apply(mcpToNotch).get(parentClass);
         final Set<T> seargeMethods = getMap.apply(mcpToSrg).get(parentClass);
 
@@ -394,7 +393,8 @@ public class AsmLibExtension {
 
 
     private static <T, K, V> Collector<T, ?, Map<K, V>> mapToSelf(Function<T, K> keyExtractor,
-                                                                  Function<T, V> valueMapper) {
+                                                                  Function<T, V> valueMapper)
+    {
         return Collectors.toMap(
                 keyExtractor,
                 valueMapper,
