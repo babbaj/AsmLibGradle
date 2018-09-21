@@ -23,13 +23,10 @@ public enum ForgeGradleVersion {
         return this.supported;
     }
 
+    //TODO: FG 1.x, FG 3.x
     public static ForgeGradleVersion detectForgeGradleVersion(Project project) {
-        if (project.getTasks().findByName("genSrgs") != null) {
-            if (project.getTasks().findByName("reobf") != null)
-                return ForgeGradleVersion.FORGEGRADLE_1_X;
-            else if (project.getExtensions().findByName("reobf") != null)
-                return ForgeGradleVersion.FORGEGRADLE_2_X;
-        }
+        if (project.getTasks().findByName("genSrgs") != null && project.getExtensions().findByName("reobf") != null)
+            return ForgeGradleVersion.FORGEGRADLE_2_X;
 
         return null;
     }

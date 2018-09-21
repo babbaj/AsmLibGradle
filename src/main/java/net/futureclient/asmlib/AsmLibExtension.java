@@ -2,11 +2,14 @@ package net.futureclient.asmlib;
 
 import com.google.gson.*;
 import net.futureclient.asmlib.forgegradle.ForgeGradleVersion;
+import net.futureclient.asmlib.forgegradle.ReobfWrapper;
+import net.futureclient.asmlib.forgegradle.MappingType;
 import net.futureclient.asmlib.parser.srg.BasicClassInfoMap;
 import net.futureclient.asmlib.parser.srg.SrgMap;
 import net.futureclient.asmlib.parser.srg.SrgParser;
 import net.futureclient.asmlib.parser.srg.member.FieldMember;
 import net.futureclient.asmlib.parser.srg.member.MethodMember;
+import net.futureclient.asmlib.parser.transformer.TransformerInfo;
 import org.gradle.api.NamedDomainObjectContainer;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
@@ -51,7 +54,8 @@ public class AsmLibExtension {
 
 
     @Input
-    public @Nullable String mappingType;
+    public @Nullable
+    String mappingType;
 
     public AsmLibExtension(Project project, ForgeGradleVersion forgeGradleVersion) {
         this.project = project;
@@ -101,6 +105,7 @@ public class AsmLibExtension {
 
         configureMappingType(resourceOutput);
 
+        //TODO: fg 1.x, fg 3.x
         compileTask.doFirst(task -> {
             switch (this.forgeGradleVersion) {
                 case FORGEGRADLE_2_X:
@@ -149,7 +154,9 @@ public class AsmLibExtension {
                                 merge(map.getFieldMap(), info.getClassName(), info.getFields());
                                 merge(map.getMethodMap(), info.getClassName(), info.getMethods());
                             },
-                            (m1, m2) -> {throw new UnsupportedOperationException("parallel");} // this might be parallelizable
+                            (m1, m2) -> {
+                                throw new UnsupportedOperationException("parallel");
+                            } // this might be parallelizable
                     );
 
 
@@ -166,12 +173,13 @@ public class AsmLibExtension {
         final Path mappingTypeFile = resourceOutput.resolve(MAPPING_TYPE_FILE);
         toDeleteAfterBuild.add(mappingTypeFile);
 
+        //TODO: make sure it werks with fg 1.x, fg 3.x
         MappingType mappingType;
         if (this.mappingType != null) {
             mappingType = MappingType.valueOf(this.mappingType);
         } else {
             // if it fails to find this then its probably a forgegradle version problem
-            final Set<Object> reobf = (NamedDomainObjectContainer<Object>)project.getExtensions().getByName("reobf");
+            final Set<Object> reobf = (NamedDomainObjectContainer<Object>) project.getExtensions().getByName("reobf");
 
             final long mappingTypesUsed = getUsedMappingTypes(reobf).count();
             if (mappingTypesUsed == 0)
@@ -219,17 +227,17 @@ public class AsmLibExtension {
         final AnnotationNode transformer = Optional.ofNullable(clazz.visibleAnnotations)
                 .flatMap(list ->
                         list.stream()
-                            .filter(node -> node.desc.equals(CLASS_TRANSFORMER))
-                            .findFirst()
+                                .filter(node -> node.desc.equals(CLASS_TRANSFORMER))
+                                .findFirst()
                 )
                 .orElseThrow(() -> new IllegalStateException("Class \"" + clazz.name + "\" is missing @Transformer annotation"));
 
         return Optional.of(transformer)
                 .flatMap(node -> this.<String>getAnnotationValue("target", transformer))
                 .orElseGet(() ->
-                    this.<Type>getAnnotationValue("value", transformer)
-                            .map(Type::getInternalName)
-                            .orElseThrow(() -> new IllegalStateException("@Transformer annotation in class \"" + clazz.name + "\" is missing a target"))
+                        this.<Type>getAnnotationValue("value", transformer)
+                                .map(Type::getInternalName)
+                                .orElseThrow(() -> new IllegalStateException("@Transformer annotation in class \"" + clazz.name + "\" is missing a target"))
                 );
     }
 
@@ -270,7 +278,7 @@ public class AsmLibExtension {
         Iterator<Object> iterator = node.values.iterator();
         while (iterator.hasNext()) {
             String valueName = (String) iterator.next();
-            T next = (T)iterator.next();
+            T next = (T) iterator.next();
             if (name.equals(valueName))
                 return Optional.of(next);
         }
@@ -349,8 +357,7 @@ public class AsmLibExtension {
                                           Function<SrgMap, Map<String, Set<T>>> getMap,
                                           Function<T, String> getHeader,
                                           Function<T, String> getProperty,
-                                          Set<String> toSave)
-    {
+                                          Set<String> toSave) {
         final Set<T> notchMethods = getMap.apply(mcpToNotch).get(parentClass);
         final Set<T> seargeMethods = getMap.apply(mcpToSrg).get(parentClass);
 
@@ -387,8 +394,7 @@ public class AsmLibExtension {
 
 
     private static <T, K, V> Collector<T, ?, Map<K, V>> mapToSelf(Function<T, K> keyExtractor,
-                                                                  Function<T, V> valueMapper)
-    {
+                                                                  Function<T, V> valueMapper) {
         return Collectors.toMap(
                 keyExtractor,
                 valueMapper,

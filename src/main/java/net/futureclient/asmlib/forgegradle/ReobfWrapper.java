@@ -1,4 +1,4 @@
-package net.futureclient.asmlib;
+package net.futureclient.asmlib.forgegradle;
 
 import java.lang.reflect.Field;
 import java.util.Objects;
@@ -28,7 +28,7 @@ public class ReobfWrapper {
         try {
             Field enumField = type.getDeclaredField("mappingType");
             enumField.setAccessible(true);
-            Enum<?> meme = (Enum<?>)enumField.get(this.instance);
+            Enum<?> meme = (Enum<?>) enumField.get(this.instance);
             MappingType mappingType = MappingType.values()[meme.ordinal()];
             if (!meme.name().equals(mappingType.name()))
                 throw new IllegalStateException("ForgeGradle ReobfMappingType is not equivalent to MappingType (version error?)");

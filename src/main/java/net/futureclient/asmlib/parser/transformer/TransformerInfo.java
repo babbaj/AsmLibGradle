@@ -1,4 +1,4 @@
-package net.futureclient.asmlib;
+package net.futureclient.asmlib.parser.transformer;
 
 import org.objectweb.asm.Type;
 
