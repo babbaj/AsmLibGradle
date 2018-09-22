@@ -89,7 +89,7 @@ public class AsmLibExtension {
         final JavaCompile compileTask = (JavaCompile) t;
 
         // delete files we put in the resource output so they dont stick around
-        project.getTasks().getByName("assemble").doLast(__ -> {
+        project.getTasks().getByName("build").doLast(__ -> {
             toDeleteAfterBuild.forEach(path -> {
                 try {
                     Files.delete(path);
@@ -103,7 +103,9 @@ public class AsmLibExtension {
         final Path mappingOutput = resourceOutput.resolve(asmLibSourceSets.get(sourceSet).mappingFile);
         toDeleteAfterBuild.add(mappingOutput);
 
-        configureMappingType(resourceOutput);
+        project.getTasks().getByName("jar").doFirst(__ -> {
+            configureMappingType(resourceOutput);
+        });
 
         //TODO: fg 1.x, fg 3.x
         compileTask.doFirst(task -> {
@@ -331,7 +333,8 @@ public class AsmLibExtension {
                     classJson.add("fields", fields);
 
                     addJsonValues(fields, mcpToNotch, mcpToSrg, mcpClass, SrgMap::getFieldMap,
-                            FieldMember::getName, FieldMember::getObfName, toSave.getFieldMap().getOrDefault(mcpClass, Collections.emptySet()));
+                            FieldMember::getName, FieldMember::getObfName,
+                            toSave.getFieldMap().getOrDefault(mcpClass, Collections.emptySet()));
                 }
                 {
                     final JsonObject methods = new JsonObject();
@@ -339,7 +342,8 @@ public class AsmLibExtension {
 
                     // getOrDefault because referenced classes return null
                     addJsonValues(methods, mcpToNotch, mcpToSrg, mcpClass, SrgMap::getMethodMap,
-                            MethodMember::getCombinedName, MethodMember::getMappedName, toSave.getMethodMap().getOrDefault(mcpClass, Collections.emptySet()));
+                            MethodMember::getCombinedName, MethodMember::getMappedName,
+                            toSave.getMethodMap().getOrDefault(mcpClass, Collections.emptySet()));
                 }
 
             });
